@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SecureLink | Erasure Coding Cluster</title>
+    <style>
+        :root {
+            --bg-base: #121016;
+            --panel-bg: #1e1b26;
+            --text-main: #e0dced;
+            --text-dim: #8b869e;
+            --accent-purple: #7a5cff;
+            --accent-gold: #d4af37;
+            --alert-red: #ff4b4b;
+            --success-green: #00d28f;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        }
+
+        body {
+            background-color: var(--bg-base);
+            color: var(--text-main);
+            padding: 2rem;
+            display: grid;
+            grid-template-columns: 1fr 350px;
+            gap: 2rem;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        .header {
+            grid-column: 1 / -1;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid rgba(212, 175, 55, 0.2);
+            padding-bottom: 1rem;
+        }
+
+        .header-title {
+            font-size: 1.5rem;
+            color: var(--accent-gold);
+            letter-spacing: 1px;
+        }
+
+        .workspace {
+            display: flex;
+            flex-direction: column;
+            gap: 2rem;
+            overflow-y: auto;
+            padding-right: 1rem;
+        }
+
+        .upload-area {
+            border: 2px dashed #332f42;
+            background: var(--panel-bg);
+            border-radius: 8px;
+            padding: 3rem;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .upload-area:hover {
+            border-color: var(--accent-purple);
+            background: #252233;
+        }
+
+        .upload-area input { display: none; }
+        .file-info { color: var(--accent-gold); margin-top: 1rem; font-weight: 500; }
+
+        .controls {
+            display: flex;
+            gap: 1rem;
+            background: var(--panel-bg);
+            padding: 1rem;
+            border-radius: 8px;
+            border: 1px solid #332f42;
+        }
+
+        button {
+            background: var(--accent-purple);
+            color: white;
+            border: none;
+            padding: 0.8rem 1.2rem;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: 600;
+            flex: 1;
+            transition: all 0.2s ease;
+        }
+
+        button:hover { background: #6848f0; }
+        button:disabled { background: #332f42; color: #555; cursor: not-allowed; }
+
+        .btn-warning { background: transparent; border: 1px solid var(--accent-gold); color: var(--accent-gold); }
+        .btn-warning:hover:not(:disabled) { background: rgba(212, 175, 55, 0.1); }
+
+        .node-grid {
+            display: grid;
+            grid-template-columns: repeat(5, 1fr);
+            gap: 1rem;
+        }
+
+        .node-card {
+            background: var(--panel-bg);
+            border: 1px solid #332f42;
+            border-radius: 8px;
+            padding: 1rem;
+            text-align: center;
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+            transition: all 0.3s;
+        }
+
+        .node-card.offline { border-color: var(--alert-red); opacity: 0.6; }
+        .node-card.parity { border-color: var(--accent-gold); }
+
+        .node-status-indicator {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            position: absolute;
+            top: 1rem;
+            right: 1rem;
+        }
+
+        .status-healthy { background: var(--success-green); box-shadow: 0 0 8px var(--success-green); }
+        .status-offline { background: var(--alert-red); box-shadow: 0 0 8px var(--alert-red); }
+
+        .node-title { font-size: 1.1rem; font-weight: bold; }
+        .node-type { font-size: 0.8rem; color: var(--accent-gold); text-transform: uppercase; letter-spacing: 1px; }
+        .node-storage { font-size: 0.85rem; color: var(--text-dim); }
+        
+        .kill-btn {
+            margin-top: auto;
+            background: rgba(255, 75, 75, 0.1);
+            color: var(--alert-red);
+            border: 1px solid var(--alert-red);
+            padding: 0.4rem;
+            font-size: 0.8rem;
+        }
+        .kill-btn:hover { background: rgba(255, 75, 75, 0.2); }
+
+        .logs-panel {
+            background: var(--panel-bg);
+            border: 1px solid #332f42;
+            border-radius: 8px;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .logs-header {
+            padding: 1rem;
+            border-bottom: 1px solid #332f42;
+            font-size: 0.9rem;
+            color: var(--text-dim);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .logs-content {
+            padding: 1rem;
+            flex-grow: 1;
+            overflow-y: auto;
+            font-family: "Courier New", Courier, monospace;
+            font-size: 0.85rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        .log-entry { margin-bottom: 4px; }
+        .log-info { color: var(--text-dim); }
+        .log-action { color: var(--accent-purple); }
+        .log-critical { color: var(--alert-red); }
+        .log-success { color: var(--success-green); }
+
+    </style>
+</head>
+<body>
+
+    <header class="header">
+        <div class="header-title">SecureLink // Erasure Coding Cluster</div>
+        <div style="color: var(--text-dim); font-size: 0.9rem;">Tolerance: 1 Node Failure (N+1 Parity)</div>
+    </header>
+
+    <div class="workspace">
+        <label class="upload-area" id="drop-zone">
+            <h3>Click or Drag any File to Distribute</h3>
+            <p style="color: var(--text-dim); margin-top: 0.5rem;">File will be binary-sliced into 4 Data Shards + 1 XOR Parity Shard</p>
+            <div class="file-info" id="file-meta"></div>
+            <input type="file" id="file-input">
+        </label>
+
+        <div class="node-grid" id="node-container"></div>
+
+        <div class="controls">
+            <button id="btn-download" disabled onclick="storageSystem.reconstructAndDownload()">
+                ⭳ Reconstruct & Download
+            </button>
+            <button id="btn-repair" class="btn-warning" disabled onclick="storageSystem.autoRepairCluster()">
+                ⚙️ Auto-Repair Dead Node
+            </button>
+        </div>
+    </div>
+
+    <div class="logs-panel">
+        <div class="logs-header">Node Orchestrator Log</div>
+        <div class="logs-content" id="terminal"></div>
+    </div>
+
+    <script>
+        function log(msg, type = 'info') {
+            const terminal = document.getElementById('terminal');
+            const entry = document.createElement('div');
+            entry.className = `log-entry log-${type}`;
+            const time = new Date().toLocaleTimeString();
+            entry.innerText = `[${time}] ${msg}`;
+            terminal.appendChild(entry);
+            terminal.scrollTop = terminal.scrollHeight;
+        }
+
+        class DistributedStorage {
+            constructor() {
+                this.fileMeta = { name: '', size: 0, type: '' };
+                this.chunkSize = 0;
+                
+                this.nodes = [
+                    { id: 1, type: 'DATA_SHARD_1', status: 'healthy', data: null },
+                    { id: 2, type: 'DATA_SHARD_2', status: 'healthy', data: null },
+                    { id: 3, type: 'DATA_SHARD_3', status: 'healthy', data: null },
+                    { id: 4, type: 'DATA_SHARD_4', status: 'healthy', data: null },
+                    { id: 5, type: 'PARITY_SHARD', status: 'healthy', data: null }
+                ];
+                
+                this.initUI();
+            }
+
+            initUI() {
+                this.renderNodes();
+                log("System Booted. Awaiting file upload.", "info");
+
+                const fileInput = document.getElementById('file-input');
+                fileInput.addEventListener('change', (e) => this.handleUpload(e.target.files[0]));
+            }
+
+            renderNodes() {
+                const container = document.getElementById('node-container');
+                container.innerHTML = '';
+
+                this.nodes.forEach(node => {
+                    const el = document.createElement('div');
+                    el.className = `node-card ${node.status === 'offline' ? 'offline' : ''} ${node.id === 5 ? 'parity' : ''}`;
+                    
+                    const sizeKB = node.data ? (node.data.length / 1024).toFixed(2) : '0.00';
+                    const dataDesc = node.status === 'offline' ? 'DATA DESTROYED' : (node.data ? `${sizeKB} KB` : 'Empty');
+
+                    el.innerHTML = `
+                        <div class="node-status-indicator status-${node.status}"></div>
+                        <div class="node-title">Node ${node.id}</div>
+                        <div class="node-type">${node.type.replace(/_/g, ' ')}</div>
+                        <div class="node-storage">${dataDesc}</div>
+                        ${node.status === 'healthy' && node.data 
+                            ? `<button class="kill-btn" onclick="storageSystem.killNode(${node.id})">Kill Server</button>` 
+                            : `<button class="kill-btn" style="visibility:hidden">Kill</button>`}
+                    `;
+                    container.appendChild(el);
+                });
+
+                this.updateButtons();
+            }
+
+            updateButtons() {
+                const isDataPresent = this.nodes[0].data !== null;
+                const offlineCount = this.nodes.filter(n => n.status === 'offline').length;
+                
+                document.getElementById('btn-download').disabled = !isDataPresent || offlineCount > 1;
+                document.getElementById('btn-repair').disabled = offlineCount !== 1;
+            }
+
+            async handleUpload(file) {
+                if (!file) return;
+
+                this.fileMeta = { name: file.name, size: file.size, type: file.type };
+                document.getElementById('file-meta').innerText = `Target: ${file.name} (${(file.size / 1024).toFixed(2)} KB)`;
+                
+                log(`Ingesting binary stream from: ${file.name}`, 'action');
+
+                const buffer = await file.arrayBuffer();
+                const u8 = new Uint8Array(buffer);
+                
+                this.chunkSize = Math.ceil(u8.length / 4);
+                log(`Slicing file into 4 shards of ${this.chunkSize} bytes each...`, 'info');
+                
+                const dataChunks = [];
+                for(let i=0; i<4; i++) {
+                    const chunk = new Uint8Array(this.chunkSize);
+                    const start = i * this.chunkSize;
+                    const end = Math.min(start + this.chunkSize, u8.length);
+                    if(start < u8.length) {
+                        chunk.set(u8.slice(start, end), 0);
+                    }
+                    dataChunks.push(chunk);
+                }
+
+                log(`Generating mathematical XOR parity shard...`, 'info');
+                
+                const parityChunk = new Uint8Array(this.chunkSize);
+                for(let i=0; i<this.chunkSize; i++) {
+                    parityChunk[i] = dataChunks[0][i] ^ dataChunks[1][i] ^ dataChunks[2][i] ^ dataChunks[3][i];
+                }
+
+                dataChunks.forEach((chunk, idx) => {
+                    this.nodes[idx].data = chunk;
+                    this.nodes[idx].status = 'healthy';
+                });
+                
+                this.nodes[4].data = parityChunk;
+                this.nodes[4].status = 'healthy';
+
+                log(`SUCCESS: Payload distributed across 5 nodes securely.`, 'success');
+                this.renderNodes();
+            }
+
+            killNode(id) {
+                const node = this.nodes.find(n => n.id === id);
+                node.status = 'offline';
+                node.data = null; 
+                
+                log(`CRITICAL: Server Node ${id} catastrophic failure. Data permanently lost!`, 'critical');
+                this.renderNodes();
+            }
+
+            recoverLostChunk() {
+                const deadNode = this.nodes.find(n => n.status === 'offline');
+                if(!deadNode) return null;
+
+                log(`Initiating erasure coding recovery for Node ${deadNode.id}...`, 'action');
+                
+                const recoveredData = new Uint8Array(this.chunkSize);
+                
+                this.nodes.forEach(node => {
+                    if (node.status === 'healthy' && node.data) {
+                        for(let i=0; i<this.chunkSize; i++) {
+                            recoveredData[i] ^= node.data[i];
+                        }
+                    }
+                });
+
+                log(`Mathematical recovery successful. Byte array reconstructed via Parity.`, 'success');
+                return recoveredData;
+            }
+
+            reconstructAndDownload() {
+                log(`Assembling file for download...`, 'action');
+                let finalChunks = [];
+
+                for (let i = 0; i < 4; i++) {
+                    if (this.nodes[i].status === 'offline') {
+                        log(`Warning: Node ${i+1} is missing. Calculating lost bytes...`, 'critical');
+                        const recoveredBytes = this.recoverLostChunk();
+                        finalChunks.push(recoveredBytes);
+                    } else {
+                        finalChunks.push(this.nodes[i].data);
+                    }
+                }
+
+                let combined = new Uint8Array(this.chunkSize * 4);
+                let offset = 0;
+                finalChunks.forEach(chunk => {
+                    combined.set(chunk, offset);
+                    offset += chunk.length;
+                });
+
+                const exactFile = combined.slice(0, this.fileMeta.size);
+                log(`Assembly complete. Serving file to client.`, 'success');
+
+                const blob = new Blob([exactFile], { type: this.fileMeta.type });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = "RECOVERED_" + this.fileMeta.name;
+                a.click();
+            }
+
+            autoRepairCluster() {
+                const deadNode = this.nodes.find(n => n.status === 'offline');
+                if(!deadNode) return;
+
+                log(`Deploying Auto-Repair protocol for Node ${deadNode.id}...`, 'info');
+                const recoveredBytes = this.recoverLostChunk();
+                
+                setTimeout(() => {
+                    deadNode.data = recoveredBytes;
+                    deadNode.status = 'healthy';
+                    log(`Node ${deadNode.id} cluster integration complete. Health is 100%.`, 'success');
+                    this.renderNodes();
+                }, 800);
+            }
+        }
+
+        const storageSystem = new DistributedStorage();
+    </script>
+</body>
+</html>
